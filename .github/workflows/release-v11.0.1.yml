@@ -1,0 +1,46 @@
+name: Build and publish broCode v11.0.1
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v11.0.1.yml'
+      - 'work/installer-v11.0.1/**'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: brocode-v11.0.1
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build from the exact verified app payload
+        run: ./work/installer-v11.0.1/prepare-ci.ps1
+      - name: Verify install, reinstall, speech runtime and uninstall
+        run: ./work/installer-v11.0.1/test-installer.ps1
+      - name: Generate release notes and checksums
+        run: python work/installer-v11.0.1/finalize-ci.py
+      - name: Publish verified installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v11.0.1 outputs/broCodeSetup-11.0.1.exe outputs/README-v11.0.1.md outputs/SHA256SUMS-11.0.1.txt --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title 'broCode v11.0.1 â€” Windows installer' --notes-file outputs/release-notes-v11.0.1.md --draft
+          if ($LASTEXITCODE -ne 0) { throw 'Release asset upload failed' }
+          gh release edit v11.0.1 --repo $env:GITHUB_REPOSITORY --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
+      - name: Save build verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: brocode-v11.0.1-verification
+          path: |
+            outputs/*.json
+            outputs/*.log
+            outputs/SHA256SUMS-11.0.1.txt
+          retention-days: 30
